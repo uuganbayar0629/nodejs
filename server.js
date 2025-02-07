@@ -1,8 +1,18 @@
 const express = require('express');
 const mariadb = require('mariadb');
+const cors = require('cors');
 
 const app = express();
-app.use(express.json());
+// app.use(express.json());
+app.use(cors());
+app.use(express.json()); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded data
+
+const port = 5000;
+// Start server
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
+});
 
 BigInt.prototype.toJSON = function () {
     return Number(this);
@@ -16,6 +26,11 @@ const pool = mariadb.createPool({
   password: '#8164H3%$mX7oAkXiN#65XxjV7',
   database: 'bps',
   connectionLimit: 5, // Maximum number of connections in the pool
+});
+
+// Sample route
+app.get('/api/message', (req, res) => {
+  res.json({ message: 'Hello from the Node.js API!' });
 });
 
 
@@ -35,22 +50,28 @@ app.get('/users', async (req, res) => {
     res.json(rows);
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: checkCustomError(err.message) });
   } finally {
     if (conn) conn.release();
   }
 });
 
+function checkCustomError(errMsg) {
+  if (errMsg && errMsg.includes('Duplicate entry') && errMsg.includes('email')) {
+    errMsg = `Email already exists ${email}`;
+  }
+  return errMsg;
+}
 // Add a new user
 app.post('/users', async (req, res) => {
   let conn;
+  const { name, email } = req.body;
   try {
-    const { name, email } = req.body;
     conn = await pool.getConnection();
     const result = await conn.query('INSERT INTO users (name, email) VALUES (?, ?)', [name, email]);
     res.json({ id: result.insertId });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: checkCustomError(err.message) });
   } finally {
     if (conn) conn.release();
   }
@@ -58,21 +79,20 @@ app.post('/users', async (req, res) => {
 
 
 // update a user
-app.put('/users', async (req, res) => {
+app.put('/users/:id', async (req, res) => {
+    const userId = req.params.id; // Extract the ID from the route parameter
     let conn;
     try {
-      const { id, name, email } = req.body;
+      const { name, email } = req.body;
       conn = await pool.getConnection();
-      const result = await conn.query('UPDATE users SET name = ?, email = ? WHERE id = ?', [name, email, id]);
+      const result = await conn.query('UPDATE users SET name = ?, email = ? WHERE id = ?', [name, email, userId]);
       res.json({ id: result.insertId });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: checkCustomError(err.message) });
     } finally {
       if (conn) conn.release();
     }
   });
-
-  
 
 
 // delete a user by ID
@@ -83,7 +103,7 @@ app.delete('/users/:id', async (req, res) => {
       const conn = await pool.getConnection();
   
       // Execute the DELETE query
-      const result = await conn.query('DELETE FROM `users WHERE id = ?', [userId]);
+      const result = await conn.query('DELETE FROM users WHERE id = ?', [userId]);
   
       conn.release(); // Release the connection back to the pool
   
@@ -94,12 +114,6 @@ app.delete('/users/:id', async (req, res) => {
       }
     } catch (error) {
       console.error('Error:', error.message);
-      res.status(500).json({ error: 'Internal Server Error' });
+      res.status(500).json({ error: checkCustomError(err.message) });
     }
   });
-  
-
-// Start server
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
-});
